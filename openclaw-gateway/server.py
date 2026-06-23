@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from agents.spatial_executor import run_skill
 from agents.spatial_planner import plan_task as _plan_task
 from agents.orchestrator import get_orchestrator
+from planner.adaptive_planner import build_pipeline, execute_pipeline
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("spatialagent.gateway")
@@ -243,6 +244,36 @@ async def plan_only(request: ChatRequest):
     datasets = discover_datasets()
     plan_result = _plan_task(request.message, request.data_path, datasets)
     return plan_result
+
+
+@app.post("/adaptive")
+async def adaptive_pipeline(request: ChatRequest):
+    """
+    AdaptivePlanner：模糊请求 → 自动构建分析流水线 → 执行
+    
+    用于处理用户模糊请求（如"帮我看看数据有什么问题"），
+    自动组合技能形成最优分析流水线。
+    """
+    logger.info(f"自适应规划: {request.message[:80]}")
+
+    datasets = discover_datasets()
+
+    # Step 1: 构建流水线
+    pipeline = build_pipeline(
+        request.message,
+        datasets=datasets,
+        data_path=request.data_path,
+    )
+
+    # Step 2: 执行流水线
+    stages = pipeline.get("stages", [])
+    results = execute_pipeline(pipeline, data_path=request.data_path)
+
+    return {
+        "mode": "adaptive",
+        "pipeline": pipeline,
+        "results": results,
+    }
 
 
 # ============================================================

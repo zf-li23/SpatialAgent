@@ -9,6 +9,7 @@ import type {
   DatasetInfo,
 } from '../types/spatial'
 import * as api from '../services/apiService'
+import PipelineVisualizer, { type PipelineStage } from './PipelineVisualizer'
 
 interface ChatPanelProps {
   onResponse: (response: {
@@ -46,6 +47,7 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(false)
   const [datasets, setDatasets] = useState<DatasetInfo[]>([])
   const [gatewayStatus, setGatewayStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+  const [pipeline, setPipeline] = useState<{ name: string; stages: PipelineStage[]; explanation?: string; runtime?: number } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 初始化
@@ -75,31 +77,71 @@ export default function ChatPanel({
     addMessage('user', text)
     setLoading(true)
 
+    // 检测是否为模糊请求 → 使用自适应规划
+    const fuzzyPatterns = ['帮我看看', '有什么问题', '怎么样', '分析一下', '检查', '查看数据', '看看数据']
+    const isFuzzy = fuzzyPatterns.some((p) => text.includes(p))
+
     try {
-      const response = await api.sendChat({
-        message: text,
-        data_path: activeDataset?.path,
-      })
+      if (isFuzzy) {
+        // 自适应流水线模式
+        const res = await fetch(`${import.meta.env.VITE_OPENCLAW_API_URL || 'http://localhost:3000'}/adaptive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, data_path: activeDataset?.path }),
+        }).then((r) => r.json())
 
-      if (response.plan && response.plan.length > 0) {
-        // 模拟逐步执行动画
-        for (let i = 0; i < response.plan.length; i++) {
-          const updatedPlan = response.plan.map((s, idx) => ({
-            ...s,
-            status: (idx < i ? 'completed' : idx === i ? 'running' : 'pending') as PlanStep['status'],
-          }))
-          onResponse({ plan: updatedPlan })
-          await new Promise((r) => setTimeout(r, 800))
+        if (res.pipeline) {
+          setPipeline({
+            name: res.pipeline.pipeline_name || '自适应流水线',
+            stages: res.pipeline.stages || [],
+            explanation: res.pipeline.explanation,
+            runtime: res.pipeline.estimated_runtime_seconds,
+          })
+
+          // 逐步动画
+          const stages = res.pipeline.stages || []
+          for (let i = 0; i < stages.length; i++) {
+            setPipeline((prev) => prev ? {
+              ...prev,
+              stages: prev.stages.map((s: PipelineStage, idx: number) => ({
+                ...s, status: (idx < i ? 'completed' : idx === i ? 'running' : 'pending') as PipelineStage['status'],
+              })),
+            } : null)
+            await new Promise((r) => setTimeout(r, 800))
+          }
         }
+
+        const results = res.results || []
+        if (res.pipeline) {
+          setPipeline((prev) => prev ? {
+            ...prev,
+            stages: (res.pipeline.stages || []).map((s: PipelineStage) => ({ ...s, status: 'completed' })),
+          } : null)
+        }
+        onResponse({ plan: [], results })
+        const reply = formatResultsAsText(text, results, res.pipeline?.explanation || '')
+        addMessage('assistant', reply)
+      } else {
+        // 标准聊天模式
+        const response = await api.sendChat({ message: text, data_path: activeDataset?.path })
+
+        if (response.plan && response.plan.length > 0) {
+          for (let i = 0; i < response.plan.length; i++) {
+            const updatedPlan = response.plan.map((s, idx) => ({
+              ...s, status: (idx < i ? 'completed' : idx === i ? 'running' : 'pending') as PlanStep['status'],
+            }))
+            onResponse({ plan: updatedPlan })
+            await new Promise((r) => setTimeout(r, 800))
+          }
+        }
+
+        const results = response.results || []
+        const finalPlan = (response.plan || []).map((s) => ({ ...s, status: 'completed' as const }))
+        onResponse({ plan: finalPlan, results })
+
+        const reply = formatResultsAsText(text, results, response.explanation)
+        addMessage('assistant', reply, response.plan, results)
       }
-
-      const results = response.results || []
-      const finalPlan = (response.plan || []).map((s) => ({ ...s, status: 'completed' as const }))
-      onResponse({ plan: finalPlan, results })
-
-      const reply = formatResultsAsText(text, results, response.explanation)
-      addMessage('assistant', reply, response.plan, results)
-
     } catch {
       addMessage('system', `⚠️ 网关未连接\n\n${generateFallbackResponse(text)}`)
     } finally {
@@ -196,6 +238,19 @@ export default function ChatPanel({
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* 流水线可视化 */}
+      {pipeline && (
+        <div className="px-3 py-1 shrink-0">
+          <PipelineVisualizer
+            pipelineName={pipeline.name}
+            stages={pipeline.stages}
+            explanation={pipeline.explanation}
+            estimatedRuntime={pipeline.runtime}
+            onClose={() => setPipeline(null)}
+          />
+        </div>
+      )}
 
       {/* 快捷指令 */}
       <div className="px-3 py-2 border-t shrink-0 flex flex-wrap gap-1" style={{ borderColor: 'var(--color-border)' }}>
