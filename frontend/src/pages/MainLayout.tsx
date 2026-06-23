@@ -19,7 +19,7 @@ export default function MainLayout() {
   const handleChatResponse = useCallback(
     (response: { plan?: PlanStep[]; results?: SkillResult[] }) => {
       if (response.plan) setPlan(response.plan)
-      if (response.results) setResults((prev) => [...prev, ...response.results!])
+      if (response.results) setResults(response.results)  // 替换而非累积
     },
     []
   )

@@ -37,8 +37,14 @@ export async function executeSkill(
 
 // --- 技能列表 ---
 
-export async function listSkills(): Promise<string[]> {
-  const { data } = await api.get<string[]>('/skills')
+export interface SkillInfo {
+  name: string
+  description: string
+  triggers: string[]
+}
+
+export async function listSkills(): Promise<SkillInfo[]> {
+  const { data } = await api.get<SkillInfo[]>('/skills')
   return data
 }
 
@@ -51,7 +57,30 @@ export async function listDatasets(): Promise<DatasetInfo[]> {
 
 // --- 健康检查 ---
 
-export async function healthCheck(): Promise<{ status: string }> {
-  const { data } = await api.get<{ status: string }>('/health')
+export async function healthCheck(): Promise<{ status: string; version?: string; skills?: number }> {
+  const { data } = await api.get<{ status: string; version?: string; skills?: number }>('/health')
+  return data
+}
+
+// --- 自适应流水线 ---
+
+export interface AdaptiveResponse {
+  mode: string
+  pipeline: {
+    pipeline_name: string
+    stages: Array<{
+      type: string
+      skill: string
+      purpose: string
+      status: string
+    }>
+    explanation: string
+    estimated_runtime_seconds: number
+  }
+  results: SkillResult[]
+}
+
+export async function adaptivePipeline(request: ChatRequest): Promise<AdaptiveResponse> {
+  const { data } = await api.post<AdaptiveResponse>('/adaptive', request)
   return data
 }

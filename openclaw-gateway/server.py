@@ -154,10 +154,10 @@ def _run_skill_via_executor(skill_name: str, args: dict) -> dict:
 
 def discover_datasets() -> list[dict]:
     """扫描 data/ 目录的 .h5ad 文件"""
+    import anndata
     datasets = []
     for h5ad_path in sorted(DATA_DIR.glob("*.h5ad")):
         try:
-            import anndata
             adata = anndata.read_h5ad(h5ad_path, backed="r")
             info = {
                 "name": h5ad_path.name,
@@ -248,32 +248,16 @@ async def plan_only(request: ChatRequest):
 
 @app.post("/adaptive")
 async def adaptive_pipeline(request: ChatRequest):
-    """
-    AdaptivePlanner：模糊请求 → 自动构建分析流水线 → 执行
-    
-    用于处理用户模糊请求（如"帮我看看数据有什么问题"），
-    自动组合技能形成最优分析流水线。
-    """
+    """AdaptivePlanner：模糊请求 → 自动构建分析流水线 → 执行"""
     logger.info(f"自适应规划: {request.message[:80]}")
-
-    datasets = discover_datasets()
-
-    # Step 1: 构建流水线
-    pipeline = build_pipeline(
-        request.message,
-        datasets=datasets,
-        data_path=request.data_path,
-    )
-
-    # Step 2: 执行流水线
-    stages = pipeline.get("stages", [])
-    results = execute_pipeline(pipeline, data_path=request.data_path)
-
-    return {
-        "mode": "adaptive",
-        "pipeline": pipeline,
-        "results": results,
-    }
+    try:
+        datasets = discover_datasets()
+        pipeline = build_pipeline(request.message, datasets=datasets, data_path=request.data_path)
+        results = execute_pipeline(pipeline, data_path=request.data_path)
+        return {"mode": "adaptive", "pipeline": pipeline, "results": results}
+    except Exception as e:
+        logger.error(f"自适应规划失败: {e}")
+        raise HTTPException(500, f"自适应规划失败: {str(e)}")
 
 
 # ============================================================

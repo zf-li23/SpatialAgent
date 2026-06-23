@@ -7,7 +7,7 @@
 import os
 import sys
 import logging
-from typing import Optional
+from typing import Optional, Callable
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -35,8 +35,8 @@ class AgentOrchestrator:
         user_message: str,
         data_path: Optional[str] = None,
         datasets: Optional[list] = None,
-        on_plan_ready: Optional[callable] = None,
-        on_step_update: Optional[callable] = None,
+        on_plan_ready: Optional[Callable] = None,
+        on_step_update: Optional[Callable] = None,
     ) -> dict:
         """
         执行完整分析流水线。
@@ -92,16 +92,19 @@ class AgentOrchestrator:
             logger.warning(f"[Orchestrator] 第 {retry_count} 次重试")
             plan = evaluation.get("retry_plan", [])
 
+        # 最终评估
+        final_evaluation = evaluate_results(user_message, plan, results)
+
         return {
             "plan": plan,
             "results": results,
-            "evaluation": evaluate_results(user_message, plan, results),
+            "evaluation": final_evaluation,
             "explanation": plan_result.get("explanation", ""),
             "retries": retry_count,
         }
 
 
-def _notify_step(step: dict, status: str, callback: Optional[callable], result: dict = None):
+def _notify_step(step: dict, status: str, callback: Optional[Callable], result: dict = None):
     """通知步骤状态变更"""
     step["status"] = status
     if result:

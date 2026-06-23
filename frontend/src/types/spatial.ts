@@ -20,6 +20,7 @@ export interface PlanStep {
 
 export interface SkillResult {
   skill: string
+  success: boolean
   output: Record<string, unknown>
   error?: string
 }

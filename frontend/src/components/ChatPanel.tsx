@@ -84,11 +84,7 @@ export default function ChatPanel({
     try {
       if (isFuzzy) {
         // 自适应流水线模式
-        const res = await fetch(`${import.meta.env.VITE_OPENCLAW_API_URL || 'http://localhost:3000'}/adaptive`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, data_path: activeDataset?.path }),
-        }).then((r) => r.json())
+        const res = await api.adaptivePipeline({ message: text, data_path: activeDataset?.path })
 
         if (res.pipeline) {
           setPipeline({
@@ -140,10 +136,11 @@ export default function ChatPanel({
         onResponse({ plan: finalPlan, results })
 
         const reply = formatResultsAsText(text, results, response.explanation)
-        addMessage('assistant', reply, response.plan, results)
+        addMessage('assistant', reply, response.plan)
       }
-    } catch {
-      addMessage('system', `⚠️ 网关未连接\n\n${generateFallbackResponse(text)}`)
+    } catch (err: any) {
+      const msg = err?.code === 'ECONNREFUSED' ? '网关未启动' : `请求失败: ${err?.message || '未知错误'}`
+      addMessage('system', `⚠️ ${msg}\n\n${generateFallbackResponse(text)}`)
     } finally {
       setLoading(false)
     }

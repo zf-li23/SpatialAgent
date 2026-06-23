@@ -120,7 +120,10 @@ def _rule_based_plan(user_message: str, data_path: Optional[str] = None) -> dict
     need_preprocess = any(
         kw in msg_lower
         for kw in ["加载", "质控", "qc", "预处理", "读入", "load", "preprocess"]
-    ) or True  # 默认都需要预处理
+    )
+    # 如果用户没有明确说"不需要预处理"，默认添加
+    if "不需要" not in msg_lower and "跳过" not in msg_lower:
+        need_preprocess = True
 
     if need_preprocess:
         steps.append({

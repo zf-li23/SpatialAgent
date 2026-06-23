@@ -40,18 +40,32 @@ export default function SpatialDashboard({ plan, results, activeDataset }: Props
     return (r?.output as any)?.top_interactions || []
   }, [results])
 
-  // 空间散点（有轨迹数据时用伪时间着色）
+  // 稳定的模拟空间散点（useMemo 避免每次渲染改变）
   const spatialTrace = useMemo(() => {
     if (trajectorySpots.length > 0) {
       return {
-        x: trajectorySpots.map((s: any, i: number) => i * 10 + Math.random() * 5),
+        x: trajectorySpots.map((_: any, i: number) => i * 10 + ((i * 7) % 10)),
         y: trajectorySpots.map((s: any) => s.pseudotime * 100),
         colors: trajectorySpots.map((s: any) => s.pseudotime),
       }
     }
     const n = 200
-    return { x: Array.from({ length: n }, () => Math.random() * 100), y: Array.from({ length: n }, () => Math.random() * 100), colors: Array.from({ length: n }, () => Math.random()) }
+    return {
+      x: Array.from({ length: n }, (_, i) => ((i * 37) % 100)),
+      y: Array.from({ length: n }, (_, i) => ((i * 53) % 100)),
+      colors: Array.from({ length: n }, (_, i) => i / n),
+    }
   }, [trajectorySpots])
+
+  // 稳定的模拟 UMAP 散点
+  const umapTrace = useMemo(() => {
+    const n = 200
+    return {
+      x: Array.from({ length: n }, (_, i) => ((i * 41) % 15)),
+      y: Array.from({ length: n }, (_, i) => ((i * 67) % 15)),
+      clusters: Array.from({ length: n }, (_, i) => i % 6),
+    }
+  }, [])
 
   // 当前步骤
   const currentStep = plan.find((s) => s.status === 'running')
@@ -198,8 +212,8 @@ export default function SpatialDashboard({ plan, results, activeDataset }: Props
             {activeTab === 'umap' && (
               <Plot
                 data={Array.from({ length: 6 }, (_, cluster) => ({
-                  x: umapScatter.xs.filter((_, i) => umapScatter.clusters[i] === cluster),
-                  y: umapScatter.ys.filter((_, i) => umapScatter.clusters[i] === cluster),
+                  x: umapTrace.x.filter((_, i) => umapTrace.clusters[i] === cluster),
+                  y: umapTrace.y.filter((_, i) => umapTrace.clusters[i] === cluster),
                   mode: 'markers',
                   type: 'scatter',
                   name: `Cluster ${cluster}`,

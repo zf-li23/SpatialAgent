@@ -137,11 +137,7 @@ def _llm_build_pipeline(user_message: str, datasets: Optional[list]) -> dict:
         for name, info in SKILL_CAPABILITIES.items()
     )
 
-    prompt = ADAPTIVE_PLANNER_PROMPT.format(
-        user_request=user_message,
-        available_datasets=ds_text,
-        available_skills=skills_text,
-    )
+    prompt = ADAPTIVE_PLANNER_PROMPT.replace("{user_request}", user_message).replace("{available_datasets}", ds_text).replace("{available_skills}", skills_text)
 
     messages = [
         {"role": "system", "content": "你是一个空间组学分析规划器。始终输出 JSON。"},
@@ -173,9 +169,9 @@ def _rule_based_pipeline(user_message: str, datasets: Optional[list] = None) -> 
     # 分析意图识别
     analysis_added = False
 
-    # 模糊请求 → 默认 SVG
+    # 模糊请求 → 默认 SVG（但不要和下面的具体关键词重复）
     fuzzy_keywords = ["看看", "有什么", "怎么样", "分析一下", "帮我", "检查", "查看", "问题", "异常"]
-    if any(kw in msg_lower for kw in fuzzy_keywords) and not analysis_added:
+    if any(kw in msg_lower for kw in fuzzy_keywords):
         stages.append({
             "type": "ANALYSIS",
             "skill": "st_spatial_pattern",
@@ -184,18 +180,15 @@ def _rule_based_pipeline(user_message: str, datasets: Optional[list] = None) -> 
         })
         analysis_added = True
 
-    # 空间模式/差异
-    if any(kw in msg_lower for kw in ["高变", "svg", "空间模式", "空间可变", "差异", "标记", "表达模式"]):
-        if not any(s["skill"] == "st_spatial_pattern" for s in stages):
-            stages.append({
-                "type": "ANALYSIS",
-                "skill": "st_spatial_pattern",
-                "purpose": "识别空间可变基因 (Moran's I)",
-                "status": "pending",
-            })
+    # 空间模式/差异（如果上面模糊匹配没加）
+    if not analysis_added and any(kw in msg_lower for kw in ["高变", "svg", "空间模式", "空间可变", "差异", "标记", "表达模式"]):
+        stages.append({
+            "type": "ANALYSIS",
+            "skill": "st_spatial_pattern",
+            "purpose": "识别空间可变基因 (Moran's I)",
+            "status": "pending",
+        })
         analysis_added = True
-
-    # 区域查询
     if any(kw in msg_lower for kw in ["区域", "坐标", "位置", "特定区域", "切片区域", "局部"]):
         stages.append({
             "type": "ANALYSIS",
