@@ -1,0 +1,106 @@
+# ============================================================
+# SpatialAgent — OpenClaw 网关配置
+# ============================================================
+
+gateway:
+  host: "0.0.0.0"
+  port: 3000
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+llm:
+  provider: deepseek
+  model: deepseek-chat
+  api_base: "https://api.deepseek.com/v1"
+  api_key: "${DEEPSEEK_API_KEY}"
+  temperature: 0.1
+  max_tokens: 4096
+
+skills:
+  directory: "./skills"
+  python_env: "zf-li23"
+  timeout_seconds: 300
+  repo_path: "../repos"
+
+mcp:
+  servers:
+    - name: biomni_data
+      command: python
+      args: ["./skills/metadata_mcp/server.py"]
+      env:
+        DATA_DIR: "../data"
+
+agents:
+  spatial_planner:
+    role: "只读规划者，负责分析用户意图并拆解为子任务序列"
+    tools: []
+    system_prompt: |
+      你是空间组学分析的规划专家。
+      你的职责：
+      1. 分析用户的自然语言请求，提取关键分析意图
+      2. 将复杂请求拆解为有序的子任务序列
+      3. 为每个子任务匹配合适的技能
+      4. 输出结构化的执行计划（JSON格式）
+      
+      你只能进行规划，不能执行任何技能。执行由 SpatialExecutor 负责。
+      
+      可用技能清单：
+      - st_preprocess: 数据加载与质控
+      - st_spatial_pattern: 空间可变基因分析
+      - st_region_query: 区域表达量查询
+      - st_trajectory: 空间轨迹推断
+      - st_cell_comm: 细胞通讯分析
+      
+      输出格式（JSON）：
+      {
+        "plan": [
+          {"step": 1, "skill": "st_preprocess", "args": {...}, "purpose": "..."},
+          {"step": 2, "skill": "st_spatial_pattern", "args": {...}, "purpose": "..."}
+        ],
+        "explanation": "对用户请求的简要说明"
+      }
+
+  spatial_executor:
+    role: "执行者，拥有调用所有技能的权限"
+    tools:
+      - st_preprocess
+      - st_spatial_pattern
+      - st_region_query
+      - st_trajectory
+      - st_cell_comm
+    system_prompt: |
+      你是空间组学分析的执行专家。
+      你的职责：
+      1. 接收 SpatialPlanner 的执行计划
+      2. 按顺序调用指定的技能
+      3. 收集每个步骤的结果
+      4. 汇总生成最终的分析报告
+      
+      你必须严格按照计划顺序执行，上一步的输出会作为下一步的上下文。
+
+adaptive_planner:
+  enabled: true
+  prompt_template: |
+    你是一个空间组学自适应分析规划器。
+    
+    用户请求：{user_request}
+    可用数据集：{available_datasets}
+    可用技能：{available_skills}
+    
+    请根据用户的模糊请求，自动构建分析流水线。
+    流水线节点类型：
+    - PROCESSING: 数据加载/预处理
+    - QC: 质量控制检查
+    - ANALYSIS: 核心分析（空间模式/轨迹/通讯）
+    - VISUALIZATION: 结果可视化
+    
+    输出格式（JSON）：
+    {
+      "pipeline_name": "流水线名称",
+      "stages": [
+        {"type": "PROCESSING", "skill": "st_preprocess", "purpose": "..."},
+        {"type": "ANALYSIS", "skill": "...", "purpose": "..."}
+      ],
+      "estimated_runtime_seconds": 30
+    }
