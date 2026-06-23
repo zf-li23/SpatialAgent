@@ -17,6 +17,13 @@ __pycache__/
 # Data files (large binary)
 data/*.h5ad
 data/*.h5
+data/*.tar
+data/*.tar.gz
+data/*.gz
+
+# Data directories (images, raw outputs)
+data/V1_Human_Lymph_Node/
+data/GSE263791/
 
 # Environment
 .env

@@ -201,6 +201,62 @@ async def list_datasets():
     return discover_datasets()
 
 
+@app.get("/datasets/{name}/preview")
+async def dataset_preview(name: str):
+    """返回数据集的空间坐标、UMAP 和基本统计"""
+    try:
+        import anndata
+        data_path = DATA_DIR / name
+        if not data_path.exists():
+            # 尝试父目录
+            for f in DATA_DIR.glob("*.h5ad"):
+                if f.name == name:
+                    data_path = f
+                    break
+            else:
+                raise HTTPException(404, f"数据集 {name} 不存在")
+        
+        adata = anndata.read_h5ad(str(data_path), backed="r")
+        
+        # 1. 空间坐标
+        spatial = None
+        for key in ["spatial", "X_spatial"]:
+            if key in adata.obsm:
+                coords = adata.obsm[key][:min(len(adata.obsm[key]), 5000)]  # 采样 5000 个
+                spatial = {"x": coords[:, 0].tolist(), "y": coords[:, 1].tolist()}
+                break
+        
+        # 2. UMAP (若已计算) 或 PCA (用于前端 js 做 UMAP)
+        umap = None
+        if "X_umap" in adata.obsm:
+            u = adata.obsm["X_umap"][:min(len(adata.obsm["X_umap"]), 5000)]
+            umap = {"x": u[:, 0].tolist(), "y": u[:, 1].tolist()}
+        
+        pca = None
+        if "X_pca" in adata.obsm:
+            p = adata.obsm["X_pca"][:min(len(adata.obsm["X_pca"]), 5000), :2]
+            pca = {"x": p[:, 0].tolist(), "y": p[:, 1].tolist()}
+        
+        # 3. 基本统计
+        stats = {
+            "n_obs": adata.n_obs,
+            "n_vars": adata.n_vars,
+            "has_spatial": spatial is not None,
+        }
+        
+        adata.file.close()
+        
+        return {
+            "name": name,
+            "stats": stats,
+            "spatial": spatial,
+            "umap": umap,
+            "pca": pca,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"预览失败: {str(e)}")
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """
