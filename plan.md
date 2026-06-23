@@ -1,4 +1,4 @@
-# BioAgent — 空间组学 AI 辅助平台 详细实施计划
+# SpatialAgent — 空间组学 AI 辅助平台 详细实施计划
 
 > **项目定位：** 面向课程作业的空间组学数据分析智能体。前端 React + CopilotKit 提供聊天交互，OpenClaw 网关驱动 DeepSeek API 解析任务并调用 Python 技能，实现从自然语言到空间分析结果可视化的完整闭环。**核心策略：复用现有仓库源码，仅编写粘合代码（Glue Code）。**
 
@@ -91,10 +91,10 @@ graph TB
 
 ### 2.1 工作目录初始化
 
-- [ ] **2.1.1** 在 `~/BioAgent/` 下创建目录结构：
+- [ ] **2.1.1** 在项目根目录下创建目录结构：
 
 ```
-BioAgent/
+SpatialAgent/
 ├── frontend/                 # React + Vite + CopilotKit
 │   ├── src/
 │   │   ├── pages/

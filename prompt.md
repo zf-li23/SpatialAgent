@@ -1,8 +1,8 @@
 ### 📚 仓库功能回顾与新发现归类
 
-我把你克隆的 16 个仓库按在 BioAgent 中的作用分成了 4 层，让你心里有谱：
+我把你克隆的 16 个仓库按在 SpatialAgent 中的作用分成了 4 层，让你心里有谱：
 
-| 层级 | 对应仓库 | 核心价值（你的 BioAgent 该如何复用） |
+| 层级 | 对应仓库 | 核心价值（你的 SpatialAgent 该如何复用） |
 | :--- | :--- | :--- |
 | **🧠 大脑 & 网关层** | `openclaw`, `opencode`, `deepseek-v4-for-copilot` | **OpenClaw** 作为唯一执行网关（连接 IDE、前端和后端 API）；Copilot 插件仅用于 IDE 编码辅助，不与最终产品耦合。 |
 | **🧬 空间组学专用“业务大脑”** | `SpatialAgent` (GeneTech), `qust` (QuST-LLM), `stLearn`, `omicverse` | **直接复制其核心脚本逻辑**，封装成 OpenClaw 可调用的 **Python Skills**，让 AI 能听懂“空间变异分析”、“区域选择”等指令。 |
@@ -13,16 +13,16 @@
 
 ---
 
-### 🏗️ BioAgent 项目架构设计（适配无计算资源环境）
+### 🏗️ SpatialAgent 项目架构设计（适配无计算资源环境）
 
 由于你**没有独立计算资源**，后端直接调 DeepSeek API，我们的落地策略是：
 
 > **前端（React + Vite）** 发送自然语言指令 → **OpenClaw 网关（本地进程）** 解析任务 → **动态调用 Python 脚本（复用 stLearn/omicverse 逻辑）** 进行轻量级 CPU 计算（非 GPU 训练）→ 返回 JSON 结果 → **前端可视化展示。**
 
-#### 推荐的目录结构（直接在 `~/BioAgent` 下新建）
+#### 推荐的目录结构
 
 ```
-BioAgent/
+SpatialAgent/
 ├── frontend/                 # React + Vite + CopilotKit
 │   ├── src/
 │   │   ├── pages/            # 空间组学分析面板
@@ -44,7 +44,7 @@ BioAgent/
 以下是你需要**逐条复制粘贴到 VS Code Copilot Chat (或 Agent 模式)** 中的任务指令。**建议按顺序执行**，每个任务 Copilot 都能充分复用你 `repos/` 下的现有源码。
 
 #### 📝 Prompt 1：初始化前端与核心依赖
-> “我们正在构建一个名为 BioAgent 的空间组学 AI 辅助平台。请利用 **`CopilotKit`** 和 **React + Vite + TypeScript** 初始化前端项目。要求：
+> "我们正在构建一个名为 SpatialAgent 的空间组学 AI 辅助平台。请利用 **`CopilotKit`** 和 **React + Vite + TypeScript** 初始化前端项目。要求：
 > 1. 参考 `./repos/CopilotKit/examples` 的结构，在主页面集成 CopilotKit 的聊天面板。
 > 2. 创建 `SpatialDashboard` 组件，预留用于展示空间转录组切片（`plotly.js`）和基因表达热图的区域。
 > 3. 配置 `package.json`，引入 `@copilotkit/react-core`、`axios`、`plotly.js-dist` 和 `ag-grid-react`（用于表格展示）。
