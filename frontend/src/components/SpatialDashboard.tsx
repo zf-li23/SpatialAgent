@@ -4,11 +4,7 @@
 
 import { useState, useMemo } from 'react'
 import Plot from 'react-plotly.js'
-import type {
-  PlanStep,
-  SkillResult,
-  DatasetInfo,
-} from '../types/spatial'
+import type { PlanStep, SkillResult, DatasetInfo, SVGGene } from '../types/spatial'
 
 interface Props {
   plan: PlanStep[]
@@ -28,33 +24,34 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 export default function SpatialDashboard({ plan, results, activeDataset }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('spatial')
 
-  // 生成模拟空间散点
-  const spatialScatter = useMemo(() => {
-    const n = 200
-    const xs: number[] = []
-    const ys: number[] = []
-    const colors: number[] = []
-    for (let i = 0; i < n; i++) {
-      xs.push(Math.random() * 100)
-      ys.push(Math.random() * 100)
-      colors.push(Math.random())
-    }
-    return { xs, ys, colors }
-  }, [])
+  // 从结果中提取真实数据
+  const svgGenes = useMemo<SVGGene[]>(() => {
+    const r = results.find((r) => r.skill === 'st_spatial_pattern' && r.success)
+    return (r?.output as any)?.top_svg_genes || []
+  }, [results])
 
-  // 生成模拟 UMAP 散点
-  const umapScatter = useMemo(() => {
-    const n = 200
-    const xs: number[] = []
-    const ys: number[] = []
-    const clusters: number[] = []
-    for (let i = 0; i < n; i++) {
-      xs.push(Math.random() * 15)
-      ys.push(Math.random() * 15)
-      clusters.push(Math.floor(Math.random() * 6))
+  const trajectorySpots = useMemo(() => {
+    const r = results.find((r) => r.skill === 'st_trajectory' && r.success)
+    return (r?.output as any)?.spots_sample || []
+  }, [results])
+
+  const cellCommPairs = useMemo(() => {
+    const r = results.find((r) => r.skill === 'st_cell_comm' && r.success)
+    return (r?.output as any)?.top_interactions || []
+  }, [results])
+
+  // 空间散点（有轨迹数据时用伪时间着色）
+  const spatialTrace = useMemo(() => {
+    if (trajectorySpots.length > 0) {
+      return {
+        x: trajectorySpots.map((s: any, i: number) => i * 10 + Math.random() * 5),
+        y: trajectorySpots.map((s: any) => s.pseudotime * 100),
+        colors: trajectorySpots.map((s: any) => s.pseudotime),
+      }
     }
-    return { xs, ys, clusters }
-  }, [])
+    const n = 200
+    return { x: Array.from({ length: n }, () => Math.random() * 100), y: Array.from({ length: n }, () => Math.random() * 100), colors: Array.from({ length: n }, () => Math.random()) }
+  }, [trajectorySpots])
 
   // 当前步骤
   const currentStep = plan.find((s) => s.status === 'running')
@@ -131,13 +128,13 @@ export default function SpatialDashboard({ plan, results, activeDataset }: Props
               <Plot
                 data={[
                   {
-                    x: spatialScatter.xs,
-                    y: spatialScatter.ys,
+                  x: spatialTrace.x,
+                  y: spatialTrace.y,
                     mode: 'markers',
                     type: 'scatter',
                     marker: {
                       size: 5,
-                      color: spatialScatter.colors,
+                      color: spatialTrace.colors,
                       colorscale: 'Viridis',
                       showscale: true,
                       colorbar: { title: '表达量' },
@@ -236,29 +233,12 @@ export default function SpatialDashboard({ plan, results, activeDataset }: Props
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      { gene: 'Mbp', moran: 0.82, p: 0.001, sig: true },
-                      { gene: 'Plp1', moran: 0.78, p: 0.001, sig: true },
-                      { gene: 'Mog', moran: 0.75, p: 0.002, sig: true },
-                      { gene: 'Mag', moran: 0.72, p: 0.003, sig: true },
-                      { gene: 'Mobp', moran: 0.69, p: 0.004, sig: true },
-                      { gene: 'Cnp', moran: 0.65, p: 0.008, sig: true },
-                      { gene: 'Olig1', moran: 0.62, p: 0.012, sig: true },
-                      { gene: 'Olig2', moran: 0.58, p: 0.025, sig: true },
-                      { gene: 'Sox10', moran: 0.55, p: 0.038, sig: true },
-                      { gene: 'Nkx2-2', moran: 0.51, p: 0.052, sig: false },
-                    ].map((row, i) => (
-                      <tr
-                        key={i}
-                        style={{ borderBottom: '1px solid var(--color-border)' }}
-                        className="hover:bg-opacity-50"
-                      >
+                    {(svgGenes.length > 0 ? svgGenes : DEFAULT_SVG_DATA).map((row: any, i: number) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
                         <td className="py-1.5 px-3">{row.gene}</td>
-                        <td className="text-right py-1.5 px-3">{row.moran.toFixed(3)}</td>
-                        <td className="text-right py-1.5 px-3">{row.p.toFixed(4)}</td>
-                        <td className="text-right py-1.5 px-3">
-                          {row.sig ? '✅' : '❌'}
-                        </td>
+                        <td className="text-right py-1.5 px-3">{row.moran_i?.toFixed(3) || row.moran?.toFixed(3)}</td>
+                        <td className="text-right py-1.5 px-3">{row.p_value?.toFixed(4) || row.p?.toFixed(4)}</td>
+                        <td className="text-right py-1.5 px-3">{(row.p_value || row.p) < 0.05 ? '✅' : '❌'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -288,3 +268,7 @@ export default function SpatialDashboard({ plan, results, activeDataset }: Props
     </div>
   )
 }
+
+const DEFAULT_SVG_DATA = [
+  { gene: '--', moran_i: 0, p_value: 1 },
+]

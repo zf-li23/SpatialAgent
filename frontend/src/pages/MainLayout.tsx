@@ -9,26 +9,17 @@ import type {
   PlanStep,
   SkillResult,
   DatasetInfo,
-  PipelineDefinition,
 } from '../types/spatial'
 
 export default function MainLayout() {
   const [plan, setPlan] = useState<PlanStep[]>([])
   const [results, setResults] = useState<SkillResult[]>([])
   const [activeDataset, setActiveDataset] = useState<DatasetInfo | null>(null)
-  const [pipeline, setPipeline] = useState<PipelineDefinition | null>(null)
 
   const handleChatResponse = useCallback(
-    (response: {
-      plan?: PlanStep[]
-      results?: SkillResult[]
-      pipeline?: PipelineDefinition
-    }) => {
+    (response: { plan?: PlanStep[]; results?: SkillResult[] }) => {
       if (response.plan) setPlan(response.plan)
-      if (response.results) {
-        setResults((prev) => [...prev, ...response.results!])
-      }
-      if (response.pipeline) setPipeline(response.pipeline)
+      if (response.results) setResults((prev) => [...prev, ...response.results!])
     },
     []
   )
@@ -37,7 +28,6 @@ export default function MainLayout() {
     setActiveDataset(dataset)
     setPlan([])
     setResults([])
-    setPipeline(null)
   }, [])
 
   return (
@@ -76,7 +66,6 @@ export default function MainLayout() {
             activeDataset={activeDataset}
             onDatasetChange={handleDatasetChange}
             plan={plan}
-            pipeline={pipeline}
           />
         </div>
       </div>

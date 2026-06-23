@@ -7,8 +7,6 @@ import type {
   PlanStep,
   SkillResult,
   DatasetInfo,
-  PipelineDefinition,
-  PipelineStage,
 } from '../types/spatial'
 import * as api from '../services/apiService'
 
@@ -16,12 +14,10 @@ interface ChatPanelProps {
   onResponse: (response: {
     plan?: PlanStep[]
     results?: SkillResult[]
-    pipeline?: PipelineDefinition
   }) => void
   activeDataset: DatasetInfo | null
   onDatasetChange: (dataset: DatasetInfo | null) => void
   plan: PlanStep[]
-  pipeline: PipelineDefinition | null
 }
 
 interface ChatMessage {
@@ -44,22 +40,20 @@ export default function ChatPanel({
   activeDataset,
   onDatasetChange,
   plan,
-  pipeline,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [datasets, setDatasets] = useState<DatasetInfo[]>([])
+  const [gatewayStatus, setGatewayStatus] = useState<'checking' | 'online' | 'offline'>('checking')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 初始化加载数据集列表
+  // 初始化
   useEffect(() => {
-    api.listDatasets().then(setDatasets).catch(() => {
-      // 模拟数据
-      setDatasets([
-        { name: 'visium_lymph_node.h5ad', path: '../data/visium_lymph_node.h5ad', shape: [4035, 36601], n_spots: 4035, n_genes: 36601 },
-      ])
-    })
+    api.healthCheck()
+      .then((r) => setGatewayStatus(r.status === 'ok' ? 'online' : 'offline'))
+      .catch(() => setGatewayStatus('offline'))
+    api.listDatasets().then(setDatasets).catch(() => {})
   }, [])
 
   // 自动滚动
@@ -81,34 +75,37 @@ export default function ChatPanel({
     addMessage('user', text)
     setLoading(true)
 
-    // 模拟 Pipeline 定义（后续由网关返回）
-    const mockPipeline: PipelineDefinition = {
-      pipeline_name: '空间组学分析流水线',
-      stages: [
-        { type: 'PROCESSING', skill: 'st_preprocess', purpose: '加载数据并进行质控', status: 'pending' },
-        { type: 'ANALYSIS', skill: 'st_spatial_pattern', purpose: '识别空间可变基因', status: 'pending' },
-        { type: 'VISUALIZATION', skill: '', purpose: '渲染可视化结果', status: 'pending' },
-      ],
-      estimated_runtime_seconds: 30,
-    }
+    try {
+      const response = await api.sendChat({
+        message: text,
+        data_path: activeDataset?.path,
+      })
 
-    onResponse({ pipeline: mockPipeline })
+      if (response.plan && response.plan.length > 0) {
+        // 模拟逐步执行动画
+        for (let i = 0; i < response.plan.length; i++) {
+          const updatedPlan = response.plan.map((s, idx) => ({
+            ...s,
+            status: (idx < i ? 'completed' : idx === i ? 'running' : 'pending') as PlanStep['status'],
+          }))
+          onResponse({ plan: updatedPlan })
+          await new Promise((r) => setTimeout(r, 800))
+        }
+      }
 
-    // 模拟逐步执行
-    setTimeout(() => {
-      const updatedStages: PipelineStage[] = [
-        { ...mockPipeline.stages[0], status: 'completed' },
-        { ...mockPipeline.stages[1], status: 'running' },
-        { ...mockPipeline.stages[2], status: 'pending' },
-      ]
-      onResponse({ pipeline: { ...mockPipeline, stages: updatedStages } })
-    }, 1500)
+      const results = response.results || []
+      const finalPlan = (response.plan || []).map((s) => ({ ...s, status: 'completed' as const }))
+      onResponse({ plan: finalPlan, results })
 
-    setTimeout(() => {
-      addMessage('assistant', generateMockResponse(text))
+      const reply = formatResultsAsText(text, results, response.explanation)
+      addMessage('assistant', reply, response.plan, results)
+
+    } catch {
+      addMessage('system', `⚠️ 网关未连接\n\n${generateFallbackResponse(text)}`)
+    } finally {
       setLoading(false)
-    }, 3000)
-  }, [input, loading, addMessage, onResponse])
+    }
+  }, [input, loading, addMessage, onResponse, activeDataset])
 
   const handleQuickCommand = useCallback(
     (msg: string) => {
@@ -252,74 +249,41 @@ export default function ChatPanel({
   )
 }
 
-// --- 模拟响应（后续替换为真实 API 调用） ---
+// ============================================================
+// 结果格式化
+// ============================================================
 
-function generateMockResponse(userMessage: string): string {
-  if (userMessage.includes('质控') || userMessage.includes('QC')) {
-    return `✅ 质控完成！
+function formatResultsAsText(userMessage: string, results: SkillResult[], explanation: string): string {
+  if (!results || results.length === 0) return generateFallbackResponse(userMessage)
 
-数据集: visium_lymph_node.h5ad
-Spots: 4,035
-Genes: 36,601
-
-QC 指标:
-• 中位基因数/spot: 1,800
-• 中位 UMI/spot: 4,500
-• 线粒体比例: 5.2%
-• 核糖体比例: 12.8%`
+  let text = `✅ ${explanation || '分析完成！'}\n\n`
+  for (const r of results) {
+    if (!r.success) { text += `❌ ${r.skill}: ${r.error || '失败'}\n`; continue }
+    const out = r.output || {} as any
+    switch (r.skill) {
+      case 'st_preprocess':
+        text += `📊 数据质控: ${out.n_spots?.toLocaleString()} spots, ${out.n_genes?.toLocaleString()} genes\n`
+        text += `  中位基因/spot: ${out.median_genes_per_spot}, 线粒体: ${out.pct_mito?.toFixed(1)}%\n`; break
+      case 'st_spatial_pattern':
+        const svgs = out.top_svg_genes || []; text += `🎯 SVG (${out.method}): ${out.n_significant_genes} 个\n`
+        svgs.slice(0, 5).forEach((g: any, i: number) => { text += `  ${i + 1}. ${g.gene} (I=${g.moran_i})\n` }); break
+      case 'st_region_query':
+        text += `🗺️ 区域 (${out.n_spots_in_region} spots):\n`
+        Object.entries(out.gene_expression || {}).slice(0, 5).forEach(([g, v]: any) => { text += `  ${g}: ${v.mean}\n` }); break
+      case 'st_trajectory':
+        text += `🛤️ 伪时间 [${out.pseudotime_range?.[0]?.toFixed(2)}, ${out.pseudotime_range?.[1]?.toFixed(2)}], ${out.n_branches} 分支\n`; break
+      case 'st_cell_comm':
+        const pairs = out.top_interactions || []; text += `📡 细胞通讯: ${out.n_significant_pairs} 显著对\n`
+        pairs.slice(0, 3).forEach((p: any) => { text += `  ${p.ligand}→${p.receptor} (ρ=${p.score})\n` }); break
+    }
+    text += '\n'
   }
+  return text
+}
 
-  if (userMessage.includes('高变基因') || userMessage.includes('SVG')) {
-    return `✅ 空间可变基因分析完成！
-
-方法: Moran's I
-
-Top 5 空间可变基因:
-1. Mbp  (Moran's I: 0.82, p=0.001)
-2. Plp1 (Moran's I: 0.78, p=0.001)
-3. Mog  (Moran's I: 0.75, p=0.002)
-4. Mag  (Moran's I: 0.72, p=0.003)
-5. Mobp (Moran's I: 0.69, p=0.004)
-
-共发现 245 个显著的空间可变基因。`
+function generateFallbackResponse(userMessage: string): string {
+  for (const [kw, hint] of Object.entries({ '质控': '请先选择数据集并输入"加载数据并进行质量控制"', '高变': '请输入"分析空间高变基因"', '轨迹': '请输入"分析空间轨迹和伪时间"', '通讯': '请输入"分析配体-受体互作"' })) {
+    if (userMessage.includes(kw)) return hint
   }
-
-  if (userMessage.includes('轨迹') || userMessage.includes('伪时间')) {
-    return `✅ 空间轨迹推断完成！
-
-分析方法: Pseudo-time (stlearn)
-根节点: spot #1200
-伪时间范围: [0.00, 1.00]
-分支数: 3
-
-分支 A: 450 spots (早期)
-分支 B: 680 spots (中期)
-分支 C: 520 spots (晚期)
-
-请在右侧面板查看轨迹着色。`
-  }
-
-  if (userMessage.includes('通讯') || userMessage.includes('配体')) {
-    return `✅ 细胞通讯分析完成！
-
-方法: LIANA
-
-Top 5 配体-受体对:
-1. Lgals9 → Cd44 (score: 0.95)
-2. Apoe → Lrp1 (score: 0.91)
-3. Ccl5 → Ccr5 (score: 0.87)
-4. Cxcl12 → Cxcr4 (score: 0.84)
-5. Il16 → Cd4 (score: 0.82)
-
-共发现 120 个显著互作对。`
-  }
-
-  return `收到您的指令："${userMessage}"
-
-请尝试以下分析:
-• 📊 数据质控 — "加载数据并进行质量控制"
-• 🎯 空间高变基因 — "分析这个切片的空间高变基因"
-• 🗺️ 区域查询 — "查询某个区域的基因表达"
-• 🛤️ 空间轨迹 — "分析空间轨迹和伪时间"
-• 📡 细胞通讯 — "分析配体-受体互作"`
+  return `收到: "${userMessage}"。请启动网关 (cd openclaw-gateway && python server.py) 后重试。`
 }
